@@ -173,7 +173,7 @@
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; 
         import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
-        // --- CẤU HÌNH LỜI NHẮN TRONG THIỆP 3D (ZOOM VÀO LÀ THẤY) ---
+        // --- CẤU HÌNH LỜI NHẮN ---
         const MESSAGE_CONFIG = {
             heading: "Merry Christmas!",
             lines: [
@@ -183,16 +183,20 @@
             ]
         };
 
-        // --- DANH SÁCH ẢNH BASE64 (DÁN MÃ COPY TỪ CONSOLE VÀO ĐÂY) ---
-        const EMBEDDED_IMAGES = [
-          ];
+        // --- CẤU HÌNH ẢNH (CHỈNH SỐ LƯỢNG Ở ĐÂY) ---
+        const IMG_CONFIG = {
+            total: 22,             // Bro có bao nhiêu ảnh thì sửa số này (ví dụ 22, 30...)
+            path: 'images/',       // Tên thư mục chứa ảnh
+            prefix: '',            // Nếu tên file là "anh1.jpg" thì điền "anh", nếu chỉ là "1.jpg" thì để trống
+            ext: '.jpg'            // Đuôi file ảnh (.jpg hoặc .png)
+        };
 
         // --- CẤU HÌNH HỆ THỐNG ---
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         const CONFIG = {
             colors: { bg: 0x000000, champagneGold: 0xffd966, deepGreen: 0x03180a, accentRed: 0x990000 },
             particles: {
-                count: isMobile ? 600 : 1500, // Tự giảm hạt nếu là điện thoại
+                count: isMobile ? 600 : 1500,
                 dustCount: isMobile ? 1000 : 2500, 
                 treeHeight: 24, treeRadius: 8
             },
@@ -215,17 +219,22 @@
             
             createMessageCard(); createParticles(); createDust(); setupPostProcessing(); setupEvents();
             
-            // Load ảnh từ code (nếu có)
-            if (EMBEDDED_IMAGES.length > 0) {
-                const loader = new THREE.TextureLoader();
-                EMBEDDED_IMAGES.forEach(base64Str => {
-                    if(base64Str.startsWith("data:image")) {
-                        loader.load(base64Str, (texture) => {
-                            texture.colorSpace = THREE.SRGBColorSpace;
-                            addPhotoToScene(texture);
-                        });
-                    }
-                });
+            // --- TỰ ĐỘNG LOAD ẢNH TỪ THƯ MỤC ---
+            const textureLoader = new THREE.TextureLoader();
+            for (let i = 1; i <= IMG_CONFIG.total; i++) {
+                // Tạo đường dẫn: images/1.jpg, images/2.jpg ...
+                const imagePath = `${IMG_CONFIG.path}${IMG_CONFIG.prefix}${i}${IMG_CONFIG.ext}`;
+                
+                // Load ảnh, nếu lỗi thì bỏ qua (để tránh màn hình đen nếu thiếu file)
+                textureLoader.load(
+                    imagePath,
+                    (texture) => {
+                        texture.colorSpace = THREE.SRGBColorSpace;
+                        addPhotoToScene(texture);
+                    },
+                    undefined, // onProgress
+                    (err) => { console.warn(`Không tìm thấy file: ${imagePath}`); } // onError
+                );
             }
 
             await initMediaPipe();
@@ -408,11 +417,7 @@
             Array.from(files).forEach(f => {
                 const reader = new FileReader(); 
                 reader.onload = (ev) => { 
-                    const base64String = ev.target.result;
-                    console.log("%c ĐÂY LÀ MÃ ẢNH CỦA BẠN (Copy dòng dưới): ", "color: yellow; font-size: 14px; background: red");
-                    console.log(`"${base64String}",`); 
-                    console.log("------------------------------------------");
-                    new THREE.TextureLoader().load(base64String, (t) => { 
+                    new THREE.TextureLoader().load(ev.target.result, (t) => { 
                         t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); 
                     }); 
                 }
@@ -470,7 +475,6 @@
             landmarks.forEach(p => { ctx.beginPath(); ctx.arc(p.x * w, p.y * h, 3, 0, 2 * Math.PI); ctx.fill(); });
         }
 
-        // --- FIX LOGIC ZOOM NGẪU NHIÊN ---
         function processGestures(result) {
             if (result.landmarks && result.landmarks.length > 0) {
                 STATE.hand.detected = true;
@@ -484,15 +488,12 @@
 
                 let gestureName = "Tracking...";
 
-                // Ưu tiên Pinch (Zoom)
                 if (pinchDist < 0.05) { 
                     gestureName = "ZOOM (Random Photo)";
                     if (STATE.mode !== 'FOCUS') {
                         STATE.mode = 'FOCUS';
-                        // Lấy tất cả ảnh đang bay (bao gồm cả Thiệp)
                         const allPhotos = particleSystem.filter(p => p.type === 'PHOTO');
                         if (allPhotos.length > 0) {
-                            // Chọn ngẫu nhiên 1 cái
                             const randomPhoto = allPhotos[Math.floor(Math.random() * allPhotos.length)];
                             STATE.focusTarget = randomPhoto.mesh;
                         }
@@ -505,7 +506,7 @@
                 else if (avgDist > 0.40) { 
                     gestureName = "ROTATE (Open Hand)";
                     STATE.mode = 'SCATTER'; STATE.focusTarget = null;
-                }
+                } 
                 
                 statusPill.innerText = gestureName; statusPill.style.color = "#0f0";
             }
